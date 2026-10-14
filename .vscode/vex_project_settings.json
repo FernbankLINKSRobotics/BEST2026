@@ -1,0 +1,18 @@
+{
+	"extension": {
+		"version": "0.8.2026020401",
+		"json": 2
+	},
+	"project": {
+		"name": "basic_drivebase",
+		"description": "",
+		"creationDate": "9/30/2026, 7:25:03 PM",
+		"platform": "V5",
+		"language": "python",
+		"slot": 1,
+		"sdkVersion": "V5_1_0_1_25",
+		"python": {
+			"main": "src/main.py"
+		}
+	}
+}
