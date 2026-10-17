@@ -24,12 +24,15 @@ servo_angle = 0
 
 controller_1 = Controller(PRIMARY)
 
-tag_vision = AiVision(Ports.PORT6, AiVision.ALL_TAGS)
+tag_vision = AiVision(Ports.PORT20, AiVision.ALL_TAGS)
 
-closest_tag = {"id": 0, "width": 0, "centerX": 0}
+closest_tag = {"id": 0, "width": 0, "centerX": 0, "centerY": 0}
+
+driveLoopsNoTags = 0
 
 def print_AprilTags_to_brain():
     global closest_tag
+    global driveLoopsNoTags
     brain.screen.clear_screen()
     brain.screen.set_cursor(1, 1)
     # Take a snapshot of all AprilTags.
@@ -38,6 +41,7 @@ def print_AprilTags_to_brain():
 
     # Print tag data
     if tags and len(tags) > 0:
+        driveLoopsNoTags = 0
         for tag in tags:
             brain.screen.print("Found TagID: ")
             brain.screen.print(tag.id)
@@ -59,16 +63,36 @@ def print_AprilTags_to_brain():
                 closest_tag["id"] = tag.id
                 closest_tag["width"] = tag.width
                 closest_tag["centerX"] = tag.centerX
+                closest_tag["centerY"] = tag.centerY
     else:
         # If no AprilTags are found in this snapshot, display a message.
         brain.screen.print("No AprilTags")
+        driveLoopsNoTags += 1
+
+def drive(speed, turn):
+    LEFT.spin(FORWARD, (speed - turn)*12, VOLT)
+    RIGHT.spin(FORWARD, (speed + turn)*12, VOLT)
 
 def autonomous():
     brain.screen.clear_screen()
     brain.screen.print("autonomous code")
+    driveLoopsNoTags = 0
 
-    error = 160 - closest_tag["centerX"]
-    
+    while True:
+        print_AprilTags_to_brain()
+        error = 120 - closest_tag["centerY"]
+        brain.screen.print("CenterX:", closest_tag["centerX"])
+        brain.screen.print("    CenterY:", closest_tag["centerY"])
+        brain.screen.print("    error:", error)
+        if driveLoopsNoTags < 10:
+            if abs(error) > 10:
+                drive(0, error/120)
+            else:
+                drive(0.1, error/120)
+        else:
+            drive(0, 0)
+        wait(20, MSEC)
+
     # place automonous code here
 
 def user_control():
