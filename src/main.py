@@ -30,7 +30,7 @@ closest_tag = {"id": 0, "width": 0, "centerX": 0, "centerY": 0}
 
 driveLoopsNoTags = 0
 
-def print_AprilTags_to_brain():
+def get_apriltags():
     global closest_tag
     global driveLoopsNoTags
     brain.screen.clear_screen()
@@ -64,31 +64,50 @@ def print_AprilTags_to_brain():
                 closest_tag["width"] = tag.width
                 closest_tag["centerX"] = tag.centerX
                 closest_tag["centerY"] = tag.centerY
+        return True
     else:
         # If no AprilTags are found in this snapshot, display a message.
         brain.screen.print("No AprilTags")
-        driveLoopsNoTags += 1
+        return False
 
 def drive(speed, turn):
-    LEFT.spin(FORWARD, (speed - turn)*12, VOLT)
-    RIGHT.spin(FORWARD, (speed + turn)*12, VOLT)
+    LEFT.spin(FORWARD, (speed + turn)*12, VOLT)
+    RIGHT.spin(FORWARD, (speed - turn)*12, VOLT)
+
+"""def auton_return(corrections):
+    drive(-0.2, 0)
+    wait(1000, MSEC)
+    #I fixed wait(1000, MSEC)
+    for correction in corrections:
+        drive(0, -correction)
+        wait(20, MSEC)
+    drive(0.5, 0)"""
 
 def autonomous():
     brain.screen.clear_screen()
     brain.screen.print("autonomous code")
     driveLoopsNoTags = 0
 
+    amount_turned = 0
+
+    corrections = []
+
     while True:
-        print_AprilTags_to_brain()
+        if get_apriltags():
+            driveLoopsNoTags = 0
+        else:
+            driveLoopsNoTags += 1
         error = 120 - closest_tag["centerY"]
         brain.screen.print("CenterX:", closest_tag["centerX"])
         brain.screen.print("    CenterY:", closest_tag["centerY"])
         brain.screen.print("    error:", error)
-        if driveLoopsNoTags < 10:
+        if driveLoopsNoTags < 100:
             if abs(error) > 10:
-                drive(0, error/120)
+                drive(0, -error/120)
+                corrections.append(-error/120)
             else:
-                drive(0.1, error/120)
+                drive(0.1, -error/120)
+                corrections.append(-error/120)
         else:
             drive(0, 0)
         wait(20, MSEC)
@@ -106,10 +125,9 @@ def user_control():
             servo_angle += 1
         if controller_1.buttonL2.pressing():
             servo_angle -= 1
-        print_AprilTags_to_brain()
+        #print_AprilTags_to_brain()
         
-        LEFT.spin(FORWARD, (controller_1.axis1.position() - controller_1.axis3.position())*12, VOLT)
-        RIGHT.spin(FORWARD, (controller_1.axis1.position() + controller_1.axis3.position())*12, VOLT)
+        drive(controller_1.axis3.position(), controller_1.axis1.position())
         servo_motor.set_position(servo_angle, DEGREES)
         wait(20, MSEC)
 
