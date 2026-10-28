@@ -16,9 +16,17 @@ LEFT = Motor55(Ports.PORT2)
 
 RIGHT = Motor55(Ports.PORT1)
 
-servo_motor = Servo(brain.three_wire_port.a)
+LEFT.set_stopping(BRAKE)
 
-servo_motor.set_position(0, DEGREES)
+RIGHT.set_stopping(BRAKE)
+
+ARM = Motor55(Ports.PORT3)
+
+arm_encoder = Potentiometer(brain.three_wire_port.b)
+
+flapjack_servo = Servo(brain.three_wire_port.a)
+
+flapjack_servo.set_position(0, DEGREES)
 
 servo_angle = 0
 
@@ -122,13 +130,12 @@ def user_control():
     
     while True:
         if controller_1.buttonL1.pressing():
-            servo_angle += 1
+            ARM.spin(FORWARD, 0.1, PERCENT)
         if controller_1.buttonL2.pressing():
-            servo_angle -= 1
-        #print_AprilTags_to_brain()
+            ARM.spin(REVERSE, 0.1, PERCENT)
         
         drive(controller_1.axis3.position(), controller_1.axis1.position())
-        servo_motor.set_position(servo_angle, DEGREES)
+        flapjack_servo.set_position(arm_encoder.angle(DEGREES), DEGREES)
         wait(20, MSEC)
 
 # create competition instance
