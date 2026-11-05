@@ -16,4 +16,4 @@ Calibration (pip install numpy scipy):
     python tools/calib_fit.py --selftest ; python tools/calib_fit.py session.csv
     python tools/fit_motion.py --selftest ; python tools/fit_motion.py sysid_*.csv
 
-AI-drafted starter code: disclose and cite per the 2026 Engineering Notebook rules.
+This code was written by Fernbank LINKS, BEST Team 701, with the help of Anthropic's Claude
