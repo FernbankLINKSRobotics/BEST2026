@@ -29,6 +29,9 @@ using namespace trk;
 static pros::Controller master(pros::E_CONTROLLER_MASTER);
 static pros::Motor leftDrive(cfg::PORT_LEFT_DRIVE);     // MC55 on a Smart Port
 static pros::Motor rightDrive(cfg::PORT_RIGHT_DRIVE);   // negative port = reversed
+static pros::Motor arm(cfg::PORT_ARM_MOTOR);
+static pros::Motor flapJack(cfg::PORT_FLAPJACK_MOTOR);
+static pros::ADIMotor finger(cfg::THREE_WIRE_CLAW);
 static pros::AIVision vision(cfg::PORT_AIVISION);
 
 static const CameraModel CAM{cfg::FX, cfg::FY, cfg::CX, cfg::CY, cfg::CAM_HEIGHT_IN,
@@ -289,9 +292,29 @@ void opcontrol() {
       const int cmd = sysidStep(newFrame, tags);
       setDrive(cmd, cmd);
     } else {
-      const double fwd = master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y) / 127.0;
-      const double turn = master.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X) / 127.0;
+      const double fwd = -1 * master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y) / 127.0; // had to reverse
+      const double turn = master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_X) / 127.0;
       setDrive((fwd + turn) * cfg::MC55_MAX_MV, (fwd - turn) * cfg::MC55_MAX_MV);
+      if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L1)) {
+        arm.move(100);
+      } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)) {
+        arm.move(-100);
+      } else {
+        arm.move(0);
+      }
+      if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R2)) {
+        flapJack.move(100);
+      } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_R1)) {
+        flapJack.move(-100);
+      } else {
+        flapJack.move(0);
+      }
+      if (master.get_digital(pros::E_CONTROLLER_DIGITAL_UP)) {
+        
+        finger.set_value(60);
+      } else if (master.get_digital(pros::E_CONTROLLER_DIGITAL_DOWN)) {
+        finger.set_value(-60);
+      }
     }
     logLine(out);
 

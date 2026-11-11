@@ -11,9 +11,12 @@ namespace cfg {
 
 // ---------------- Smart Ports (1-21) ----------------
 // Negative port number = reversed motor (PROS 4 convention).
-constexpr int PORT_LEFT_DRIVE  = 1;    // MC55 -> large motor, left wheel
-constexpr int PORT_RIGHT_DRIVE = -2;   // MC55 -> large motor, right wheel (reversed)
-constexpr int PORT_AIVISION    = 10;   // AI Vision Sensor
+constexpr int PORT_LEFT_DRIVE  = -1;    // MC55 -> large motor, left wheel
+constexpr int PORT_RIGHT_DRIVE = 2;   // MC55 -> large motor, right wheel (reversed)
+constexpr int PORT_AIVISION    = 10;   // AI Vision 
+constexpr int PORT_ARM_MOTOR   = 4;    // arm motor
+constexpr int PORT_FLAPJACK_MOTOR = 5; // FlapJack motor
+constexpr char THREE_WIRE_CLAW  = 'd';    // three-wire claw motor
 
 // VEXcode limits MC55 voltage commands to +/-8 V. Keep the same cap until
 // you have verified on the bench what the MC55 does above 8000 mV.
