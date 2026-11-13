@@ -28,20 +28,27 @@ import numpy as np
 from scipy.optimize import least_squares
 
 QUAD = 4.25          # inches, white inner square
-CAM_X, CAM_Y = 2.0, 0.0   # lens position in robot frame -- MEASURE and edit these
-CAM_HEIGHT_MEASURED = 18.0  # lens center above floor, from a tape measure
+CAM_X, CAM_Y = 7.87, 6.14  # lens position in robot frame (riser mount, LEFT corner, pitch 45, yaw -20; RIGHT: Y -6.14) -- MEASURE
+CAM_ROLL_DEG = 90.0        # 90 = sensor sideways (portrait), 0 = landscape; try -90 if the fit is poor
+CAM_HEIGHT_MEASURED = 20.28 # lens center above floor (riser rim 18.9 in, pitch 45) -- from a tape measure
 CY_FIXED = 120.0            # image center row
 
 
+def axes(pitch_deg, yaw_deg, roll_deg):
+    """Same as camAxes() in geometry.hpp: forward, sensor-right, sensor-down in the robot frame."""
+    p, y, r = (math.radians(v) for v in (pitch_deg, yaw_deg, roll_deg))
+    f = np.array([math.cos(p) * math.cos(y), math.cos(p) * math.sin(y), -math.sin(p)])
+    r0 = np.array([math.sin(y), -math.cos(y), 0.0]); d0 = np.cross(f, r0)
+    return f, math.cos(r) * r0 + math.sin(r) * d0, -math.sin(r) * r0 + math.cos(r) * d0
+
+
 def project(params, pts):
-    """pts: (N,3) robot-frame points -> (N,2) pixels. Same math as geometry.hpp."""
-    fx, fy, cx, cy, pitch_deg, height = params
-    p = math.radians(pitch_deg)
-    dx, dy, dz = pts[:, 0] - CAM_X, pts[:, 1] - CAM_Y, pts[:, 2] - height
-    zc = dx * math.cos(p) - dz * math.sin(p)
-    xc = -dy
-    yc = -dx * math.sin(p) - dz * math.cos(p)
-    return np.stack([cx + fx * xc / zc, cy + fy * yc / zc], axis=1)
+    """pts: (N,3) robot-frame points -> (N,2) pixels. params = fx, fy, cx, cy, pitch, height, yaw."""
+    fx, fy, cx, cy, pitch_deg, height, yaw_deg = params
+    f, r, d = axes(pitch_deg, yaw_deg, CAM_ROLL_DEG)
+    v = pts - np.array([CAM_X, CAM_Y, height])
+    zc = v @ f
+    return np.stack([cx + fx * (v @ r) / zc, cy + fy * (v @ d) / zc], axis=1)
 
 
 def tag_corners(x, y, z, yaw_deg):
@@ -74,37 +81,36 @@ def match(params, c3, px):
     return best
 
 
-def fit(obs, guess=(212.3, 195.8, 160.0, 22.0)):
-    """Free: fx, fy, cx, pitch.  Fixed: cy, height."""
+def fit(obs, guess=(212.3, 195.8, 160.0, 50.0, -10.0)):
+    """Free: fx, fy, cx, pitch, yaw.  Fixed: cy, height, roll."""
     free = np.array(guess, float)
-    full = lambda f: np.array([f[0], f[1], f[2], CY_FIXED, f[3], CAM_HEIGHT_MEASURED])
+    full = lambda f: np.array([f[0], f[1], f[2], CY_FIXED, f[3], CAM_HEIGHT_MEASURED, f[4]])
     for _ in range(3):                         # re-match corners after each fit
         perms = [match(full(free), c3, px) for c3, px in obs]
         def resid(fr):
             pr = full(fr)
             return np.concatenate([(project(pr, c3) - px[list(perm)]).ravel()
                                    for (c3, px), perm in zip(obs, perms)])
-        free = least_squares(resid, free, x_scale=[50, 50, 10, 2]).x
+        free = least_squares(resid, free, x_scale=[50, 50, 10, 2, 2]).x
     rms = math.sqrt(np.mean(resid(free) ** 2))
     return full(free), rms, perms
 
 
 def backproject(params, u, v, z):
-    """Pixel -> floor-plane point (same math as pixelToPlaneZ in geometry.hpp)."""
-    fx, fy, cx, cy, pitch_deg, height = params
-    p = math.radians(pitch_deg)
-    a, b = (u - cx) / fx, (v - cy) / fy
-    Rx, Ry, Rz = math.cos(p) - b * math.sin(p), -a, -math.sin(p) - b * math.cos(p)
-    t = (z - height) / Rz
-    return CAM_X + t * Rx, CAM_Y + t * Ry
+    """Pixel -> point on the plane Z = z (same math as pixelToPlaneZ in geometry.hpp)."""
+    fx, fy, cx, cy, pitch_deg, height, yaw_deg = params
+    f, r, d = axes(pitch_deg, yaw_deg, CAM_ROLL_DEG)
+    ray = f + ((u - cx) / fx) * r + ((v - cy) / fy) * d
+    t = (z - height) / ray[2]
+    return CAM_X + t * ray[0], CAM_Y + t * ray[1]
 
 
 def report(params, rms, perms):
-    fx, fy, cx, cy, pitch, h = params
+    fx, fy, cx, cy, pitch, h, yaw = params
     print("Paste into config.hpp:")
     print(f"  constexpr double FX = {fx:.1f};\n  constexpr double FY = {fy:.1f};")
     print(f"  constexpr double CX = {cx:.1f};\n  constexpr double CY = {cy:.1f};   // held fixed")
-    print(f"  constexpr double CAM_PITCH_DEG = {pitch:.2f};\n  constexpr double CAM_HEIGHT_IN = {h:.2f};   // measured")
+    print(f"  constexpr double CAM_PITCH_DEG = {pitch:.2f};\n  constexpr double CAM_YAW_DEG = {yaw:.2f};\n  constexpr double CAM_HEIGHT_IN = {h:.2f};   // measured")
     print(f"RMS reprojection error: {rms:.2f} px   (good: < 1.0, suspicious: > 2.0)")
     common = max(set(perms), key=perms.count)
     print(f"Most common corner order (sensor index for physical corners -,- / +,- / +,+ / -,+): {common}")
@@ -112,8 +118,8 @@ def report(params, rms, perms):
 
 def selftest():
     rng = np.random.default_rng(1)
-    truth = np.array([205.0, 199.0, 163.0, 117.0, 23.5, 17.6])
-    spots = [(x, y, 3.625, rng.uniform(-20, 20)) for x in (16, 20, 24, 28, 32) for y in (-8, 0, 8)]
+    truth = np.array([205.0, 199.0, 163.0, 117.0, 52.0, 20.15, -12.0])
+    spots = [(x, y, 3.625, rng.uniform(-20, 20)) for x in (18, 22, 26, 30, 34, 40) for y in (-8, -3, 2)]
     obs = []
     for s in spots:
         c3 = tag_corners(*s)
@@ -122,13 +128,13 @@ def selftest():
             noisy = np.round(px + rng.normal(0, 0.8, px.shape))
             obs.append((c3, noisy[[2, 3, 0, 1]]))   # pretend the sensor starts at a different corner
     global CAM_HEIGHT_MEASURED
-    CAM_HEIGHT_MEASURED = 17.6 + 0.1          # tape-measure reading, 0.1 in off
+    CAM_HEIGHT_MEASURED = 20.15 + 0.1         # tape-measure reading, 0.1 in off
     params, rms, perms = fit(obs)
     report(params, rms, perms)
     # The test that matters: do pixels land on the right spot on the table plane?
     worst = 0.0
-    for x in (14, 20, 26, 32):
-        for y in (-8, 0, 8):
+    for x in (20, 26, 32, 40):
+        for y in (-8, -3, 2):
             u, v = project(truth, np.array([[x, y, 3.625]]))[0]
             bx, by = backproject(params, u, v, 3.625)
             worst = max(worst, math.hypot(bx - x, by - y))

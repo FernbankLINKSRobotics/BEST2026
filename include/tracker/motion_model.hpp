@@ -21,6 +21,8 @@ class DriveModel {
   void reset() { vl_ = vr_ = 0; }
 
   double v() const { return 0.5 * (vl_ + vr_); }          // forward [in/s]
+  double vl() const { return vl_; }                        // left wheel [in/s]
+  double vr() const { return vr_; }                        // right wheel [in/s]
   double w() const { return (vr_ - vl_) / track_; }        // turn rate [rad/s], + = left
 
   // Inverse: what wheel voltages give (v, w)?  Adds the deadband back in.

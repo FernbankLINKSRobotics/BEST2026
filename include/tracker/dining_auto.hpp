@@ -77,12 +77,15 @@ class DiningAuto {
   void start(int searchDir) {
     ekf_.reset(); drive_.reset();
     searchDir_ = (searchDir >= 0) ? 1 : -1;
-    tState_ = 0; tTotal_ = 0; travel_ = 0; lastL_ = lastR_ = 0; rejects_ = 0; reinits_ = 0; odoV_ = odoW_ = 0; haveOdo_ = false;
+    tState_ = 0; tTotal_ = 0; travel_ = 0; lastL_ = lastR_ = 0; rejects_ = 0; reinits_ = 0; odoV_ = odoW_ = 0; haveOdo_ = false; haveOdoLeft_ = false; vlMeas_ = 0; kScale_ = 1.0;
     yaw4_ = 0; haveYaw_ = false; whiskerUsed_ = false; whiskerRise_ = bumperRise_ = false; creep_ = 0;
     tel_ = AutoTelemetry{};
     go(AutoState::ENTER);
   }
   void abort(const char* why) { tel_.abortReason = why; go(AutoState::ABORT); }
+  // Replace the camera model (the reference-tag correction calls this every frame it sees the tag).
+  void setCamera(const CameraModel& c) { cam_ = c; }
+  const CameraModel& camera() const { return cam_; }
   bool running() const {
     return state_ != AutoState::IDLE && state_ != AutoState::DONE && state_ != AutoState::ABORT;
   }
@@ -96,6 +99,11 @@ class DiningAuto {
   void feedOdometry(double dLeftIn, double dRightIn) {
     odoL_ = dLeftIn; odoR_ = dRightIn; haveOdo_ = true;
   }
+
+  // OPTIONAL, ONE encoder only: left-wheel travel since the last step() [in]. The right wheel is
+  // not measured, so we assume battery/carpet effects hit both wheels alike and scale the whole
+  // motion model by (measured left speed / model left speed).
+  void feedOdometryLeftOnly(double dLeftIn) { odoL_ = dLeftIn; haveOdoLeft_ = true; }
 
   // OPTIONAL: contact switches, current state (true = pressed). Call before step().
   void feedSwitches(bool whisker, bool bumper) {
@@ -122,16 +130,33 @@ class DiningAuto {
       // rounding error never accumulates (it is at most one edge in total), so
       // only wheel slip goes into the process noise. Scale it by the smooth
       // model speed, not by the jumpy measured one.
-      // Smooth over ~40 ms so one-edge jumps don't jerk the steering.
-      // (An exponential average keeps the total distance, it just spreads it out.)
+      // Both wheels measured. One edge on one wheel is ~3.7 deg of heading on a 10 in track, so
+      // turning rate straight from the ticks is too jumpy. Use the encoders for SPEED (average of
+      // both wheels, smoothed), and slowly blend the measured left/right difference into the
+      // motion model's turn rate so a steady curve (mismatched motors) is still caught.
       const double a = dt / (0.04 + dt);
       odoV_ += a * (0.5 * (odoL_ + odoR_) / dt - odoV_);
-      odoW_ += a * ((odoR_ - odoL_) / (cfg::TRACK_WIDTH_IN * dt) - odoW_);
+      const double aw = dt / (cfg::ENC_W_BLEND_S + dt);
+      odoW_ += aw * ((odoR_ - odoL_) / (cfg::TRACK_WIDTH_IN * dt) - odoW_);
+      double k = 1.0;
+      if (std::fabs(drive_.v()) > 1.0) k = std::fmin(1.5, std::fmax(0.5, odoV_ / drive_.v()));
+      kScale_ += 0.1 * (k - kScale_);
       v = odoV_;
-      w = odoW_;
+      w = kScale_ * drive_.w() + (odoW_ - kScale_ * drive_.w()) * cfg::ENC_W_TRUST;
       sv = std::fmax(cfg::SIG_ENC_V_MIN, cfg::SIG_ENC_FRAC * std::fabs(drive_.v()));
       sw = std::fmax(cfg::SIG_ENC_W_MIN, cfg::SIG_ENC_FRAC * std::fabs(drive_.w()));
       haveOdo_ = false;
+    } else if (haveOdoLeft_) {
+      const double a = dt / (0.04 + dt);
+      vlMeas_ += a * (odoL_ / dt - vlMeas_);
+      double k = 1.0;
+      if (std::fabs(drive_.vl()) > 1.0) k = vlMeas_ / drive_.vl();
+      k = std::fmin(1.5, std::fmax(0.5, k));
+      kScale_ += 0.1 * (k - kScale_);                    // slow: the ratio should be steady
+      v = kScale_ * drive_.v(); w = kScale_ * drive_.w();
+      sv = std::fmax(cfg::SIG_ENC_V_MIN, cfg::SIG_ENC_FRAC * std::fabs(v));
+      sw = std::fmax(cfg::SIG_W_MIN, cfg::SIG_W_FRAC * std::fabs(w));   // heading is still model-only
+      haveOdoLeft_ = false;
     }
     ekf_.predict(v, w, dt, sv, sw);
     yaw4_ = wrapPi(yaw4_ - 4.0 * w * dt);   // the table turns the other way in our frame
@@ -300,7 +325,7 @@ class DiningAuto {
   // does not block the line of sight to any corner.
   bool tagWillStayVisible() const {
     const double look = 2.0;  // inches of travel we look ahead
-    const double h = 0.5 * cfg::TAG_QUAD_IN;
+    const double h = cfg::TAG_OUTER_HALF_IN;   // the decoder needs the outer data bits too
     const double plateR = 0.5 * cfg::PLATE_DIAMETER_IN;
     const double tPlate = (cam_.height - cfg::PLATE_CARRY_Z_IN) / (cam_.height - cfg::TABLE_TAG_Z_IN);
     for (int i = 0; i < 4; ++i) {
@@ -334,6 +359,7 @@ class DiningAuto {
   double creep_ = 0;
   bool haveOdo_ = false;
   double odoL_ = 0, odoR_ = 0, odoV_ = 0, odoW_ = 0;
+  bool haveOdoLeft_ = false; double vlMeas_ = 0, kScale_ = 1.0;
   int reinits_ = 0;
   double tState_ = 0, tTotal_ = 0, travel_ = 0, lastL_ = 0, lastR_ = 0;
 };
