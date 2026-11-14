@@ -35,4 +35,4 @@ Laptop (no robot):
 Sim (Nov 11, pitch 45): nominal 266/300; +2 pitch / -3 yaw bump 43/300 uncorrected -> 278/300 with the self-check.
 Open item: placed runs show a ~0.65 in mean LATERAL bias in the sim (not from the camera check) -- to investigate.
 
-AI-drafted starter code: disclose and cite per the 2026 Engineering Notebook rules.
+AI-drafted starter code by Claude
