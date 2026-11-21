@@ -17,14 +17,12 @@
 //          This records ARM_RAW_AT_LEVEL and FJ_RAW_AT_LEVEL.
 // STEP 3 - SIGNS: raise the arm into the STOW pose and press X+LEFT (stores STOW and sets ARM_SIGN so
 //          STOW reads positive). Tip the fork UP from level, hold Y and tap UP (sets FJ_SIGN).
-// TEACH the arm presets used by the match program (controls v2 macros + the Dining Room auto):
-//          UP / DOWN (no X) = choose which preset (name on line 3 of the controller)
-//          X+RIGHT = store the CURRENT arm angle into the chosen preset
-//          X+LEFT  = store STOW (folded into the 24 in start cube). The first time, ARM_SIGN is set so
-//                    that STOW comes out positive (arm up).
+// TEACH (hold X, tap a D-pad direction) stores the CURRENT arm angle as a preset:
+//          X+LEFT = STOW (folded into the 24 in start cube)   X+UP = CARRY (plate ~4 in off the floor)
+//          X+DOWN = PLACE (plate resting on a table)            X+RIGHT = HIGH (spare preset)
+//          The first time you store STOW, ARM_SIGN is set so that STOW comes out positive (arm up).
 //          Hold Y and tap UP with the fork tipped UP to set FJ_SIGN (fork-up = positive).
-//          PLATE CARRY and CAMCHECK are 0 deg (arm level) by definition -- they come from step 2 (LEVEL).
-// GO TO (closed loop): RIGHT (no X) = go to the chosen preset, LEFT (no X) = go to STOW.
+// GO TO (closed loop): tap a D-pad direction WITHOUT X: LEFT stow, UP carry, DOWN place, RIGHT high.
 //          While closed loop is on, L1/L2 and R1/R2 move the targets (like the main robot), the
 //          FlapJack keeps its angle to the ground (auto-level).
 // B      : STOP -- motors off, back to manual. Also clears a RUNAWAY fault.
@@ -51,20 +49,16 @@ static pros::adi::AnalogIn armPot(ADI_ARM_POT), fjPot(ADI_FJ_POT);
 
 // taught values (start from the main code's placeholders)
 static int armRawLevel = 2048, fjRawLevel = 2048, armSign = 1, fjSign = 1;
-constexpr int NPRESET = 8;
-static double preset[NPRESET] = {140.0, -50.0, 35.0, 15.0, -10.0, -40.0, -40.0, -46.0};
-static const char* presetName[NPRESET] = {"STOW", "PLATE_CHECK", "DOOR_OPEN", "TOP3_BREAD", "MEAT_L2", "LEVEL1", "AUTO_CARRY", "AUTO_PLACE"};
-static const char* presetCfg[NPRESET] = {"ARM_STOW_DEG", "ARM_PLATE_CHECK_DEG", "ARM_DOOR_OPEN_DEG", "ARM_TOP3_BREAD_DEG",
-                                         "ARM_MEAT_L2_DEG", "ARM_LEVEL1_DEG", "ARM_AUTO_CARRY_DEG", "ARM_AUTO_PLACE_DEG"};
-static int chosen = 1;
+static double preset[4] = {140.0, -40.0, -46.0, 30.0};      // STOW, CARRY, PLACE, HIGH
+static const char* presetName[4] = {"STOW", "CARRY", "PLACE", "HIGH"};
 static bool stowTaught = false;
 
 static void printConfig() {
   std::printf("\n// ---- paste into include/tracker/config.hpp (main robot) ----\n");
   std::printf("constexpr int  ARM_RAW_AT_LEVEL  = %d;\nconstexpr int  ARM_SIGN          = %d;\n", armRawLevel, armSign);
   std::printf("constexpr int  FJ_RAW_AT_LEVEL   = %d;\nconstexpr int  FJ_SIGN           = %d;\n", fjRawLevel, fjSign);
-  for (int i = 0; i < NPRESET; ++i) std::printf("constexpr double %-20s = %.1f;\n", presetCfg[i], preset[i]);
-  std::printf("\n");
+  std::printf("constexpr double ARM_STOW_DEG   = %.1f;\nconstexpr double ARM_CARRY_DEG  = %.1f;\n", preset[0], preset[1]);
+  std::printf("constexpr double ARM_PLACE_DEG  = %.1f;\n// HIGH (spare) = %.1f\n\n", preset[2], preset[3]);
 }
 
 void initialize() { pros::screen::print(pros::E_TEXT_MEDIUM, 0, "LINKS 701 potentiometer test"); }
@@ -92,6 +86,7 @@ void opcontrol() {
     const bool dU = master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_UP);
     const bool dD = master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_DOWN);
     const bool dR = master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_RIGHT);
+    const int pressed = dL ? 0 : dU ? 1 : dD ? 2 : dR ? 3 : -1;
 
     if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_B)) {
       closedLoop = false; armJ.reset(); fjJ.reset(); last = "STOP";
@@ -101,19 +96,15 @@ void opcontrol() {
     }
     if (yHeld && dU) {                                                     // FlapJack sign: fork tipped UP now
       fjSign = (rf - fjRawLevel) >= 0 ? 1 : -1; last = "FJ sign set"; printConfig();
-    } else if (xHeld && (dL || dR)) {                                      // TEACH a preset
-      int which = dL ? 0 : chosen;
-      if (which == 0 && !stowTaught) {                                     // STOW = arm up -> must read positive
+    } else if (xHeld && pressed >= 0) {                                    // TEACH a preset
+      if (pressed == 0 && !stowTaught) {                                   // STOW = arm up -> must read positive
         armSign = (ra - armRawLevel) >= 0 ? 1 : -1; stowTaught = true;
       }
-      preset[which] = arm::potDeg(ra, armRawLevel, armSign);
-      last = presetName[which]; printConfig();
-    } else if (!xHeld && (dU || dD)) {                                     // choose a preset
-      chosen = (chosen + (dU ? 1 : NPRESET - 1)) % NPRESET; last = presetName[chosen];
-    } else if (!xHeld && (dL || dR)) {                                     // GO TO a preset
-      const int which = dL ? 0 : chosen;
+      preset[pressed] = arm::potDeg(ra, armRawLevel, armSign);
+      last = presetName[pressed]; printConfig();
+    } else if (pressed >= 0) {                                             // GO TO a preset
       closedLoop = true; armJ.reset(); fjJ.reset();
-      armJ.setTarget(preset[which]); fjGroundTarget = 0.0; last = presetName[which];
+      armJ.setTarget(preset[pressed]); fjGroundTarget = 0.0; last = presetName[pressed];
     }
 
     const int lIn = master.get_digital(pros::E_CONTROLLER_DIGITAL_L1) ? 1 : master.get_digital(pros::E_CONTROLLER_DIGITAL_L2) ? -1 : 0;
@@ -139,15 +130,14 @@ void opcontrol() {
       pros::screen::print(pros::E_TEXT_MEDIUM, 3, "FJ   raw %4d %s %s  rel %6.1f  ground %6.1f -> %6.1f %s  ", rf, okF ? "  " : "!!",
                           endWarn(rf), fjRel, fjGround, fjGroundTarget, fjJ.faulted ? "RUN!" : "");
       pros::screen::print(pros::E_TEXT_MEDIUM, 4, "LEVEL arm %d fj %d  SIGN arm %+d fj %+d   ", armRawLevel, fjRawLevel, armSign, fjSign);
-      pros::screen::print(pros::E_TEXT_MEDIUM, 5, "chosen %-11s %6.1f | STOW %.1f CHK %.1f DOOR %.1f T3 %.1f   ", presetName[chosen], preset[chosen], preset[0], preset[1], preset[2], preset[3]);
-      pros::screen::print(pros::E_TEXT_MEDIUM, 7, "MEAT %.1f LVL1 %.1f AUTO_CARRY %.1f AUTO_PLACE %.1f   ", preset[4], preset[5], preset[6], preset[7]);
+      pros::screen::print(pros::E_TEXT_MEDIUM, 5, "STOW %.1f CARRY %.1f PLACE %.1f HIGH %.1f   ", preset[0], preset[1], preset[2], preset[3]);
       pros::screen::print(pros::E_TEXT_MEDIUM, 6, "out arm %5d mV  fj %5d mV   ", armMv, fjMv);
       std::printf("POT,%lu,%d,%d,%.1f,%.1f,%.1f,%d,%d\n", (unsigned long)pros::millis(), ra, rf, armDeg, fjRel, fjGround, armMv, fjMv);
     }
     switch (loop % 15) {                                                   // controller: one line per 50 ms
       case 0:  master.print(0, 0, "ARM %6.1f %s   ", armDeg, armJ.faulted ? "RUN!" : (okA ? "" : "POT!")); break;
       case 5:  master.print(1, 0, "FJ  %6.1f %s   ", fjGround, fjJ.faulted ? "RUN!" : (okF ? "" : "POT!")); break;
-      case 10: master.print(2, 0, "%c %-11s%6.1f", closedLoop ? 'C' : 'M', presetName[chosen], preset[chosen]); break;
+      case 10: master.print(2, 0, "%-6s %-10s ", closedLoop ? "CLOSED" : "MANUAL", last); break;
     }
     ++loop;
     pros::delay(10);

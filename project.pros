@@ -1,11 +1,11 @@
 {
     "py/object": "pros.conductor.project.Project",
     "py/state": {
-        "project_name": "POT-Test",
+        "project_name": "Pot-test",
         "target": "v5",
         "templates": {
             "kernel": {
-                "location": "C:\\Users\\nirva\\AppData\\Roaming\\PROS\\templates\\kernel@4.2.3",
+                "location": "C:\\Users\\LINKS\\AppData\\Roaming\\PROS\\templates\\kernel@4.2.3",
                 "metadata": {
                     "cold_addr": "58720256",
                     "cold_output": "bin/cold.package.bin",
@@ -81,7 +81,7 @@
                 "version": "4.2.3"
             },
             "liblvgl": {
-                "location": "C:\\Users\\nirva\\AppData\\Roaming\\PROS\\templates\\liblvgl@9.2.0",
+                "location": "C:\\Users\\LINKS\\AppData\\Roaming\\PROS\\templates\\liblvgl@9.2.0",
                 "metadata": {
                     "origin": "pros-mainline"
                 },
